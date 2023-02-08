@@ -7,8 +7,8 @@ import pandas as pd
 import os
 import numpy as np
 
-
 from num2words import num2words
+from decimal import Decimal
 from symspellpy import SymSpell, Verbosity
 from nltk import pos_tag, word_tokenize
 from nltk.corpus import wordnet
@@ -86,7 +86,7 @@ class TextPreprocessor_CSV(object):
             value = tokens[i].strip()
             if len(value) > 0:
                 if value.isdigit():
-                    value = num2words(value)
+                    value = num2words(Decimal(str(value)))
                 
                 numbers_to_words = numbers_to_words + ' ' + value
 
