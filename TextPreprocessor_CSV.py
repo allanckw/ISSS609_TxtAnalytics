@@ -7,8 +7,8 @@ import pandas as pd
 import os
 import numpy as np
 
-
 from num2words import num2words
+from decimal import Decimal
 from symspellpy import SymSpell, Verbosity
 from nltk import pos_tag, word_tokenize
 from nltk.corpus import wordnet
@@ -86,7 +86,7 @@ class TextPreprocessor_CSV(object):
             value = tokens[i].strip()
             if len(value) > 0:
                 if value.isdigit():
-                    value = num2words(value)
+                    value = num2words(Decimal(str(value)))
                 
                 numbers_to_words = numbers_to_words + ' ' + value
 
@@ -94,7 +94,7 @@ class TextPreprocessor_CSV(object):
     
     def get_wordnet_pos(self,treebank_tag):
         """
-        return WORDNET POS compliance to WORDENT lemmatization (a,n,r,v) 
+        return WORDNET POS compliance to WORDNET lemmatization (a,n,r,v) 
         """
         if treebank_tag.startswith('J'):
             return wordnet.ADJ
@@ -125,7 +125,7 @@ class TextPreprocessor_CSV(object):
                 value = re.sub(r'[^\w\s]','',p[1])
                 if(len(value.strip()) > 0):
                     if value.isdigit():
-                        lst.append(num2words(value))
+                        lst.append(num2words(Decimal(str(value))))
                     else:
                         lst.append(value)
 
