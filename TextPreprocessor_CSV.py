@@ -6,9 +6,6 @@ import pkg_resources
 import pandas as pd
 import os
 import numpy as np
-
-from num2words import num2words
-from decimal import Decimal
 from symspellpy import SymSpell, Verbosity
 from nltk import pos_tag, word_tokenize
 from nltk.corpus import wordnet
@@ -16,13 +13,34 @@ from nltk.stem import WordNetLemmatizer
 
 class TextPreprocessor_CSV(object):
     """description of class"""
-    __corpus = None
+    corpus_dictionary = None
     
     posts = None
+
+    suicidal_data_TF = []
+    suicidal_data_TFIDF = []
+         
+    non_suicidal_data_TF = []
+    non_suicidal_data_TFIDF = []
+
+    all_labeled_data = []
+    all_tfidf_labeled_data = []
 
     @property
     def DataFrame(self):
         return self.posts
+
+    @property
+    def CorpusDictionary(self):
+        return self.corpus_dictionary
+
+    @property
+    def tf_labeled_data(self):
+        return self.all_labeled_data
+
+    @property
+    def tfidf_labeled_data(self):
+       return self.all_tfidf_labeled_data
 
     def __new__(cls, *args, **kwargs):
         return super().__new__(cls)
@@ -49,24 +67,26 @@ class TextPreprocessor_CSV(object):
         #to lower case
         self.posts['text'] = self.posts['text'].str.lower()
         
-        #remove punctuation
-        self.posts['text'] = self.posts['text'].apply(lambda t: re.sub(r'[^\w\s]', '', t))
-
-        #self.posts['text'] = self.posts['text'].apply(lambda t: gensim.parsing.preprocessing.preprocess_string(t))
-
-        #convert num to words
-        self.posts['text'] = self.posts['text'].apply(lambda t: self.Num2Words(t))
+        #remove punctuation and numbers
+        self.posts['text'] = self.posts['text'].apply(lambda t: re.sub(r'[^a-zA-Z ]', '', t))
+    
+        #remove stop words first round, this is to reduce the number of words that symspell need to process...
+        #however typo cannot be removed
+        self.posts['text'] = self.posts['text'].apply(lambda t: gensim.parsing.preprocessing.remove_stopwords(str(t)))
 
         #Fixing typos
         #https://medium.com/@yashj302/spell-check-and-correction-nlp-python-f6a000e3709d
         #self.posts['text'] = self.posts['text'].apply(lambda t: str(TextBlob(t).correct()))
-        symsp = SymSpell(max_dictionary_edit_distance=3, prefix_length=7)
+        #use max_dictionary_edit_distance to use Levenshtein instead of Damerau-Levenshtein algorithm to improvement performance
+        #In general, if you need to correct complex spelling errors that involve transpositions or other types of character 
+        #changes, Damerau-Levenshtein may be the best choice. If you're working with a large dataset or need to perform spelling 
+        #correction in real time, Levenshtein may be a good compromise between speed and accuracy.
+        symsp = SymSpell(max_dictionary_edit_distance=1, prefix_length=7) #Damerau-Levenshtein algorithm = 2, Levenshtein = 1
         dictionary_path = pkg_resources.resource_filename("symspellpy", "frequency_dictionary_en_82_765.txt")
-        symsp.load_dictionary(dictionary_path, 0, 1)
-        self.posts['text'] = self.posts['text'].apply(lambda t: symsp.lookup_compound(t, max_edit_distance=3)[0] )
+        symsp.load_dictionary(dictionary_path, term_index=0, count_index=1)
+        self.posts['text'] = self.posts['text'].apply(lambda t: symsp.lookup_compound(t, max_edit_distance=1)[0].term )
 
-        #remove stop words
-
+        #remove stop words again after typo corrected
         self.posts['text'] = self.posts['text'].apply(lambda t: gensim.parsing.preprocessing.remove_stopwords(str(t)))
 
         #lemmatization, note: Lemmatization includes stemming as discussed in class.
@@ -75,22 +95,48 @@ class TextPreprocessor_CSV(object):
         self.posts['text_lemmatized'] = self.posts['text_lemmatized_with_postag'].apply(lambda t: self.getLemmatizedText(t))
         #print(self.posts.head())
 
+        self.generateVectors()
+
+    def generateVectors(self):
+         #create dictionary
+        all_docs5 = []
+
+        #create corpus dictionary
+        self.corpus_dictionary = gensim.corpora.Dictionary()
+
+        for i in range(len(self.posts)):
+            all_docs5.append(self.posts.loc[i, "text_lemmatized"])
+            
+        self.corpus_dictionary.add_documents(all_docs5)
+
+        #print(self.corpus_dictionary)
+
+        # Convert all documents to term frequency (TF) vectors
+        all_tf_vectors = [self.corpus_dictionary.doc2bow(doc) for doc in all_docs5]
+        #ntc = n = raw, t = zero-corrected idf, c = cosine - https://radimrehurek.com/gensim/models/tfidfmodel.html
+        tfidf = gensim.models.TfidfModel(all_tf_vectors, smartirs='ntc')
+        corpus_tfidf = tfidf[all_tf_vectors]
+
+        all_data_as_dict = [{id:tf_value for (id, tf_value) in vec} for vec in all_tf_vectors]
+        tfidf_data_as_dict = [{id:tf_value for (id, tf_value) in vec} for vec in corpus_tfidf]
+
+
+        for i in range(len(all_data_as_dict)):
+            doc_tf = all_data_as_dict[i]
+            doc_tfidf = tfidf_data_as_dict[i]
+            doc_label = self.posts.loc[i, "class"]
+
+            if(label == "suicide"):
+                self.suicidal_data_TF.append((doc_tf, doc_label))
+                self.suicidal_data_TFIDF.append((doc_tfidf, doc_label))
+
+            else:
+                self.non_suicidal_data_TF.append((doc_tf, doc_label))
+                self.non_suicidal_data_TFIDF.append((doc_tfidf, doc_label))
       
-    def Num2Words(self, sentence):
-        
-        numbers_to_words = ""
-        sentence = sentence.replace("\n", "")
-        tokens = word_tokenize(sentence.strip())
+        self.all_labeled_data = self.suicidal_data_TF + self.non_suicidal_data_TF
+        self.all_tfidf_labeled_data  = self.suicidal_data_TFIDF + self.non_suicidal_data_TFIDF
 
-        for i in range(len(tokens)):
-            value = tokens[i].strip()
-            if len(value) > 0:
-                if value.isdigit():
-                    value = num2words(Decimal(str(value)))
-                
-                numbers_to_words = numbers_to_words + ' ' + value
-
-        return numbers_to_words
     
     def get_wordnet_pos(self,treebank_tag):
         """
@@ -123,10 +169,25 @@ class TextPreprocessor_CSV(object):
             for p in postag_tuple:
                 #print(p[1])
                 value = re.sub(r'[^\w\s]','',p[1])
-                if(len(value.strip()) > 0):
-                    if value.isdigit():
-                        lst.append(num2words(Decimal(str(value))))
-                    else:
-                        lst.append(value)
+                lst.append(value)
 
         return lst
+
+    #deprecated
+    def Num2Words(self, sentence):
+        
+        numbers_to_words = ""
+        sentence = sentence.replace("\n", "")
+        tokens = word_tokenize(sentence.strip())
+
+        for i in range(len(tokens)):
+            value = tokens[i].strip()
+            if len(value) > 0:
+                if value.isdigit():
+                    value = num2words(value)
+                
+                numbers_to_words = numbers_to_words + ' ' + value
+
+        print(numbers_to_words)
+
+        return numbers_to_words
