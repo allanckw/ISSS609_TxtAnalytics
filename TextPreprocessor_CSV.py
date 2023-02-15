@@ -77,7 +77,7 @@ class TextPreprocessor_CSV(object):
         #Fixing typos
         #https://medium.com/@yashj302/spell-check-and-correction-nlp-python-f6a000e3709d
         #self.posts['text'] = self.posts['text'].apply(lambda t: str(TextBlob(t).correct()))
-        #use max_dictionary_edit_distance to use Levenshtein instead of Damerau-Levenshtein algorithm to improvement performance
+        #set max_dictionary_edit_distance = 1 to use Levenshtein instead of Damerau-Levenshtein algorithm (max_dictionary_edit_distance=2) to improve performance
         #In general, if you need to correct complex spelling errors that involve transpositions or other types of character 
         #changes, Damerau-Levenshtein may be the best choice. If you're working with a large dataset or need to perform spelling 
         #correction in real time, Levenshtein may be a good compromise between speed and accuracy.
@@ -126,7 +126,7 @@ class TextPreprocessor_CSV(object):
             doc_tfidf = tfidf_data_as_dict[i]
             doc_label = self.posts.loc[i, "class"]
 
-            if(label == "suicide"):
+            if(doc_label == "suicide"):
                 self.suicidal_data_TF.append((doc_tf, doc_label))
                 self.suicidal_data_TFIDF.append((doc_tfidf, doc_label))
 
@@ -137,7 +137,10 @@ class TextPreprocessor_CSV(object):
         self.all_labeled_data = self.suicidal_data_TF + self.non_suicidal_data_TF
         self.all_tfidf_labeled_data  = self.suicidal_data_TFIDF + self.non_suicidal_data_TFIDF
 
-    
+    def SaveDictionary(self):
+        self.CorpusDictionary.save("suicidalDataset.dict")
+
+
     def get_wordnet_pos(self,treebank_tag):
         """
         return WORDNET POS compliance to WORDNET lemmatization (a,n,r,v) 
@@ -167,8 +170,7 @@ class TextPreprocessor_CSV(object):
         lst = list()
         for postag_tuple in pos_tag:
             for p in postag_tuple:
-                #print(p[1])
-                value = re.sub(r'[^\w\s]','',p[1])
+                value = re.sub(r'[^a-zA-Z ]', '', p[1])
                 lst.append(value)
 
         return lst
